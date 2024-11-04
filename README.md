@@ -8,3 +8,8 @@
 - Маковеев Кирилл Олегович
 - Пальников Евгений Юрьевич
 - Поцелуев Андрей Михайлович
+
+Данные текущего этапа:
+
+https://drive.google.com/drive/folders/1Uw3SFii9-SY6ooxjozWwKulsn6vqD5o2?usp=sharing
+
