@@ -4,7 +4,7 @@ import os
 
 base_url = 'https://www.finam.ru'
 ticket = 'ydex'
-amount = 5
+amount = 10
 
 async def async_work():
     async with async_playwright() as p:
@@ -34,7 +34,7 @@ async def async_work():
             with open('./data/' + ticket  + url[url.find('item/') + 4:-1] + '.txt', 'a', encoding='utf-8') as f:
                 for paragraph in paragraphs:
                     s = await paragraph.inner_text()
-                    if (s== 'При полном или частичном использовании материалов ссылка на Finam.ru обязательна. Подробнее об использовании информации и котировок. Редакция не несет ответственности за достоверность информации, опубликованной в рекламных объявлениях.  18+'):
+                    if (s == ('При полном или частичном использовании материалов ссылка на\xa0Finam.ru\xa0обязательна. Подробнее об\xa0использовании информации и\xa0котировок. Редакция не\xa0несет ответственности за\xa0достоверность информации, опубликованной в\xa0рекламных объявлениях.\xa0\xa018+')):
                         break
                     f.write(s)
         await browser.close()
