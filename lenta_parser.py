@@ -100,7 +100,12 @@ class lentaRu_parser:
                 out.to_excel("/tmp/checkpoint_table.xlsx")
                 print('Checkpoint saved!')
                 save_counter = 0
-            
+        for index, row in out.iterrows():
+            ticket = 'YNDX' if row['pubdate'] > 1719532800 else 'YDEX'
+            j = rq.get('http://iss.moex.com/iss/engines/stock/markets/shares/securities/' + ticket + '/candles.json?from=' + datetime.fromtimestamp(row['pubdate']).strftime('%Y-%m-%d') + '&till=' + datetime.fromtimestamp(row['pubdate']).strftime('%Y-%m-%d') + '&interval=24').json()
+            print('http://iss.moex.com/iss/engines/stock/markets/shares/securities/' + ticket + '/candles.json?from=' + datetime.fromtimestamp(row['pubdate']).strftime('%Y-%m-%d') + '&till=' + datetime.fromtimestamp(row['pubdate']).strftime('%Y-%m-%d') + '&interval=24')
+            stock = [{k : r[i] for i, k in enumerate(j['candles']['columns'])} for r in j['candles']['data']]
+            out.at[index, 'target'] = (stock[0]['close'] - stock[0]['open']) if stock != [] else None
         if save_excel:
             out.to_excel("lenta_{}_{}.xlsx".format(
                 param_dict['dateFrom'],
@@ -109,7 +114,7 @@ class lentaRu_parser:
         
         return out
 
-query = 'apple'
+query = 'яндекс'
 offset = 0
 size = 10
 sort = "2"
@@ -130,9 +135,8 @@ param_dict = {'query'     : query,
             'type'      : material, 
             'bloc'      : bloc,
             'domain'    : domain}
-tbl = parser.get_articles(param_dict=param_dict,
+df = parser.get_articles(param_dict=param_dict,
                          time_step = 37,
                          save_every = 5, 
                          save_excel = True)
-print(len(tbl.index))
-tbl.head()
+
