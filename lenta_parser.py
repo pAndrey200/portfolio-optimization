@@ -7,8 +7,9 @@ from datetime import datetime, timedelta
 from IPython import display
 
 class lentaRu_parser:
-    def __init__(self):
-        pass
+    save: bool
+    def __init__(self, _save):
+        save = _save
     
     
     def _get_url(self, param_dict: dict) -> str:
@@ -46,24 +47,35 @@ class lentaRu_parser:
         return url
 
 
-    def _get_search_table(self, param_dict: dict) -> pd.DataFrame:
+    def _get_search_table(self, param_dict: dict, ticket:str) -> pd.DataFrame:
         """
         Возвращает pd.DataFrame со списком статей
         """
         url = self._get_url(param_dict)
         r = rq.get(url)
         search_table = pd.DataFrame(r.json()['matches'])
-        
+        search_table['ticket'] = ticket
+        self._get_stock(search_table, ticket)
         return search_table
     
-    def get_articles(self,
+    def _get_stock(self, df: pd.DataFrame, ticket:str):
+        """
+        Добавляет разницу цен акций на момент начала и конца торгов
+        """
+        for index, row in df.iterrows():
+            ticket = ('YNDX' if row['pubdate'] < 1719532800 else 'YDEX') if ticket == 'YANDEX' else ticket
+            j = rq.get('http://iss.moex.com/iss/engines/stock/markets/shares/securities/' + ticket + '/candles.json?from=' + datetime.fromtimestamp(row['pubdate']).strftime('%Y-%m-%d') + '&till=' + datetime.fromtimestamp(row['pubdate'] + 86400*3).strftime('%Y-%m-%d') + '&interval=24').json()
+            stock = [{k : r[i] for i, k in enumerate(j['candles']['columns'])} for r in j['candles']['data']]
+            print('http://iss.moex.com/iss/engines/stock/markets/shares/securities/' + ticket + '/candles.json?from=' + datetime.fromtimestamp(row['pubdate']).strftime('%Y-%m-%d') + '&till=' + datetime.fromtimestamp(row['pubdate'] + 86400*3).strftime('%Y-%m-%d') + '&interval=24', stock)
+            df.at[index, 'target'] = (stock[0]['close'] - stock[0]['open']) if stock != [] else None
+    
+    def _get_articles(self,
                      param_dict,
-                     time_step = 10,
-                     save_every = 5, 
+                     time_step,
+                     ticket,
                      save_excel = True) -> pd.DataFrame:
         """
         Функция для скачивания статей интервалами через каждые time_step дней
-        Делает сохранение таблицы через каждые save_every * time_step дней
 
         param_dict: dict
         ### Параметры запроса 
@@ -84,59 +96,72 @@ class lentaRu_parser:
             raise ValueError('dateFrom should be less than dateTo')
         
         out = pd.DataFrame()
-        save_counter = 0
         while dateFrom <= dateTo:
             param_copy['dateTo'] = (dateFrom + time_step).strftime('%Y-%m-%d')
             if dateFrom + time_step > dateTo:
                 param_copy['dateTo'] = dateTo.strftime('%Y-%m-%d')
             print('Parsing articles from '\
                   + param_copy['dateFrom'] +  ' to ' + param_copy['dateTo'])
-            out = pd.concat([out, self._get_search_table(param_copy)], axis=0, ignore_index=True)
+            out = pd.concat([out, self._get_search_table(param_copy, ticket)], axis=0, ignore_index=True)
             dateFrom += time_step + timedelta(days=1)
             param_copy['dateFrom'] = dateFrom.strftime('%Y-%m-%d')
-            save_counter += 1
-            if save_counter == save_every:
-                display.clear_output(wait=True)
-                out.to_excel("/tmp/checkpoint_table.xlsx")
-                print('Checkpoint saved!')
-                save_counter = 0
-        for index, row in out.iterrows():
-            ticket = 'YNDX' if row['pubdate'] > 1719532800 else 'YDEX'
-            j = rq.get('http://iss.moex.com/iss/engines/stock/markets/shares/securities/' + ticket + '/candles.json?from=' + datetime.fromtimestamp(row['pubdate']).strftime('%Y-%m-%d') + '&till=' + datetime.fromtimestamp(row['pubdate']).strftime('%Y-%m-%d') + '&interval=24').json()
-            print('http://iss.moex.com/iss/engines/stock/markets/shares/securities/' + ticket + '/candles.json?from=' + datetime.fromtimestamp(row['pubdate']).strftime('%Y-%m-%d') + '&till=' + datetime.fromtimestamp(row['pubdate']).strftime('%Y-%m-%d') + '&interval=24')
-            stock = [{k : r[i] for i, k in enumerate(j['candles']['columns'])} for r in j['candles']['data']]
-            out.at[index, 'target'] = (stock[0]['close'] - stock[0]['open']) if stock != [] else None
-        if save_excel:
-            out.to_excel("lenta_{}_{}.xlsx".format(
-                param_dict['dateFrom'],
-                param_dict['dateTo']))
-        print('Finish')
         
+        print('Finish')
         return out
+    
+    def get_dataset(self, tickets):
 
-query = 'яндекс'
-offset = 0
-size = 10
-sort = "2"
-title_only = ""
-domain = "1"
-material = "0"
-bloc = "4"
-dateFrom = '2024-01-01'
-dateTo = "2024-12-24"
-parser = lentaRu_parser()
-param_dict = {'query'     : query, 
-            'from'      : str(offset),
-            'size'      : str(size),
-            'dateFrom'  : dateFrom,
-            'dateTo'    : dateTo,
-            'sort'      : sort,
-            'title_only': title_only,
-            'type'      : material, 
-            'bloc'      : bloc,
-            'domain'    : domain}
-df = parser.get_articles(param_dict=param_dict,
-                         time_step = 37,
-                         save_every = 5, 
-                         save_excel = True)
 
+
+        df = pd.DataFrame()
+        for query, ticket in tickets.items():
+            offset = 0
+            size = 1000
+            sort = "2"
+            title_only = ""
+            domain = "1"
+            material = "0"
+            bloc = "4"
+            dateFrom = '2024-01-01'
+            dateTo = "2024-12-24"
+            param_dict = {'query'     : query, 
+                'from'      : str(offset),
+                'size'      : str(size),
+                'dateFrom'  : dateFrom,
+                'dateTo'    : dateTo,
+                'sort'      : sort,
+                'title_only': title_only,
+                'type'      : material, 
+                'bloc'      : bloc,
+                'domain'    : domain}
+            
+            df = pd.concat([df, self._get_articles(param_dict=param_dict,
+                            time_step = 30,
+                            ticket = ticket,
+                            save_excel = True)], axis=0, ignore_index=True)
+            
+        if self.save:
+            df.to_excel("./data/lenta_{}_{}.xlsx".format(
+            param_dict['dateFrom'],
+            param_dict['dateTo']))
+            df.to_csv("./data/lenta_{}_{}.csv".format(
+            param_dict['dateFrom'],
+            param_dict['dateTo']))
+        return df
+         
+
+
+
+tickets = {
+    'яндекс' : 'YANDEX',
+    'сбер' : 'SBER',
+    'тинькофф' : 'T',
+    'газпром' : 'GAZP',
+    'лукойл' : 'LKOH',
+    'норникель' : 'GMKN',
+    'роснефть' : 'ROSN',
+    'втб' : 'VTBR',
+    'московская биржа' : 'MOEX'
+}
+lp = lentaRu_parser(True)
+df = lp.get_dataset(tickets)
