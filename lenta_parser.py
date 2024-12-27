@@ -4,13 +4,11 @@ from bs4 import BeautifulSoup as bs
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from IPython import display
+import time
 
 class lentaRu_parser:
-    save: bool
-    def __init__(self, _save):
-        save = _save
-    
+    def __init__(self):
+        pass
     
     def _get_url(self, param_dict: dict) -> str:
         """
@@ -51,6 +49,7 @@ class lentaRu_parser:
         """
         Возвращает pd.DataFrame со списком статей
         """
+        time.sleep(2)
         url = self._get_url(param_dict)
         r = rq.get(url)
         search_table = pd.DataFrame(r.json()['matches'])
@@ -67,7 +66,7 @@ class lentaRu_parser:
             j = rq.get('http://iss.moex.com/iss/engines/stock/markets/shares/securities/' + ticket + '/candles.json?from=' + datetime.fromtimestamp(row['pubdate']).strftime('%Y-%m-%d') + '&till=' + datetime.fromtimestamp(row['pubdate'] + 86400*3).strftime('%Y-%m-%d') + '&interval=24').json()
             stock = [{k : r[i] for i, k in enumerate(j['candles']['columns'])} for r in j['candles']['data']]
             print('http://iss.moex.com/iss/engines/stock/markets/shares/securities/' + ticket + '/candles.json?from=' + datetime.fromtimestamp(row['pubdate']).strftime('%Y-%m-%d') + '&till=' + datetime.fromtimestamp(row['pubdate'] + 86400*3).strftime('%Y-%m-%d') + '&interval=24', stock)
-            df.at[index, 'target'] = (stock[0]['close'] - stock[0]['open']) if stock != [] else None
+            df.at[index, 'target'] = (stock[0]['close'] - stock[0]['open']) / stock[0]['open'] if stock != [] else None
     
     def _get_articles(self,
                      param_dict,
@@ -115,6 +114,7 @@ class lentaRu_parser:
 
         df = pd.DataFrame()
         for query, ticket in tickets.items():
+            time.sleep(3)
             offset = 0
             size = 1000
             sort = "2"
@@ -134,19 +134,19 @@ class lentaRu_parser:
                 'type'      : material, 
                 'bloc'      : bloc,
                 'domain'    : domain}
-            
-            df = pd.concat([df, self._get_articles(param_dict=param_dict,
+            new_df = self._get_articles(param_dict=param_dict,
                             time_step = 30,
                             ticket = ticket,
-                            save_excel = True)], axis=0, ignore_index=True)
+                            save_excel = True)
+            new_df.to_csv("./data/lenta_{}_{}_{}.csv".format(param_dict['dateFrom'], param_dict['dateTo'], ticket))
+            df = pd.concat([df, new_df], axis=0, ignore_index=True)
             
-        if self.save:
-            df.to_excel("./data/lenta_{}_{}.xlsx".format(
-            param_dict['dateFrom'],
-            param_dict['dateTo']))
-            df.to_csv("./data/lenta_{}_{}.csv".format(
-            param_dict['dateFrom'],
-            param_dict['dateTo']))
+        df.to_excel("./data/lenta_{}_{}.xlsx".format(
+        param_dict['dateFrom'],
+        param_dict['dateTo']))
+        df.to_csv("./data/lenta_{}_{}.csv".format(
+        param_dict['dateFrom'],
+        param_dict['dateTo']))
         return df
          
 
@@ -163,5 +163,5 @@ tickets = {
     'втб' : 'VTBR',
     'московская биржа' : 'MOEX'
 }
-lp = lentaRu_parser(True)
+lp = lentaRu_parser()
 df = lp.get_dataset(tickets)
