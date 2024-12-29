@@ -196,9 +196,3 @@ async def load_default_model():
     MODELS[model_id] = {"model": model, "type": "ARIMA"}
     ACTIVE_MODEL_ID = model_id
     logging.info(f"Default ARIMA model {model_id} loaded.")
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
