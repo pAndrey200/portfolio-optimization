@@ -144,7 +144,7 @@ class rbc_parser:
 dateFrom = '2024-12-01'
 dateTo = "2024-12-23"
 
-param_dict = {'query'   : 'AAPL',
+param_dict = {'query'   : 'SBER',
                   'project' : 'quote',
                   'dateFrom': datetime.strptime(dateFrom, '%Y-%m-%d').strftime('%d.%m.%Y'),
                   'dateTo'  : datetime.strptime(dateTo, '%Y-%m-%d').strftime('%d.%m.%Y'),
