@@ -136,8 +136,7 @@ with tab1:
                             f"{article['publishedAt']}",
                             key=f"news_source_{idx}")
                         st.write(
-                            f"Описание: {
-                                article['description']}",
+                            f"Описание: {article['description']}",
                             key=f"news_description_{idx}")
                 else:
                     st.write("Нет доступных новостей.")
@@ -145,14 +144,14 @@ with tab1:
                 st.header("Ключевые численные показатели")
                 metrics_columns = st.columns(3)
                 metrics_columns[0].metric(
-                    label="Средняя цена закрытия", value=f"{
-                        data['Close'].mean():.2f}")
+                    label="Средняя цена закрытия",
+                    value=f"{data['Close'].mean():.2f}")
                 metrics_columns[1].metric(
-                    label="Медианная цена закрытия", value=f"{
-                        data['Close'].median():.2f}")
+                    label="Медианная цена закрытия",
+                    value=f"{data['Close'].median():.2f}")
                 metrics_columns[2].metric(
-                    label="Максимальная цена закрытия", value=f"{
-                        data['Close'].max():.2f}")
+                    label="Максимальная цена закрытия",
+                    value=f"{data['Close'].max():.2f}")
 
                 data['Daily Return'] = data['Close'].pct_change()
                 volatility = np.std(data['Daily Return']) * np.sqrt(len(data))
