@@ -1,3 +1,6 @@
+import os
+import logging
+from logging.handlers import RotatingFileHandler
 import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
@@ -9,9 +12,6 @@ from statsmodels.tsa.api import VAR
 import numpy as np
 import requests
 import matplotlib.pyplot as plt
-import os
-import logging
-from logging.handlers import RotatingFileHandler
 
 if not os.path.exists("logs"):
     os.makedirs("logs")
@@ -30,18 +30,16 @@ NEWS_API_KEY = "b4efb84bfc22478fb8ca7308c585894a"
 
 
 def get_financial_news(query, api_key, max_results=3):
-    financial_domains = "bloomberg.com,cnbc.com,reuters.com,wsj.com," +\
-                        "marketwatch.com,ft.com,yahoo.com,forbes.com," +\
-                        "investopedia.com"
+    financial_domains = "bloomberg.com,cnbc.com,reuters.com,wsj.com,marketwatch.com," +\
+                        "ft.com,yahoo.com,forbes.com,investopedia.com"
     url = (
         f"https://newsapi.org/v2/everything?q={query}&apiKey={api_key}&" +
         f"language=en&sortBy=publishedAt&domains={financial_domains}")
-    response = requests.get(url)
+    response = requests.get(url, timeout=5)
     if response.status_code == 200:
         articles = response.json().get("articles", [])[:max_results]
         return articles
-    else:
-        return []
+    return []
 
 
 st.title("AI24: Project, team 31")
@@ -180,10 +178,8 @@ with tab1:
                 st.plotly_chart(candle)
 
                 data['Bollinger_Mid'] = data['Close'].rolling(window=20).mean()
-                data['Bollinger_Up'] = data['Bollinger_Mid'] + \
-                    (data['Close'].rolling(window=20).std() * 2)
-                data['Bollinger_Low'] = data['Bollinger_Mid'] - \
-                    (data['Close'].rolling(window=20).std() * 2)
+                data['Bollinger_Up'] = data['Bollinger_Mid'] + (data['Close'].rolling(window=20).std() * 2)
+                data['Bollinger_Low'] = data['Bollinger_Mid'] - (data['Close'].rolling(window=20).std() * 2)
 
                 fig_bollinger = go.Figure()
                 fig_bollinger.add_trace(
@@ -198,16 +194,14 @@ with tab1:
                         y=data['Bollinger_Up'],
                         mode='lines',
                         name='Bollinger Верхний',
-                        line=dict(
-                            dash='dot')))
+                        line={"dash": 'dot'}))
                 fig_bollinger.add_trace(
                     go.Scatter(
                         x=data.index,
                         y=data['Bollinger_Low'],
                         mode='lines',
                         name='Bollinger Нижний',
-                        line=dict(
-                            dash='dot')))
+                        line={"dash": 'dot'}))
                 fig_bollinger.update_layout(
                     title=f'Bollinger bands для {selected_ticker}',
                     xaxis_title="Дата",
@@ -228,18 +222,16 @@ with tab1:
                             y=result.observed,
                             mode='lines',
                             name='Оригинальный ряд',
-                            line=dict(
-                                color='royalblue')))
+                            line={"color": 'royalblue'}))
                     fig_decompose_1.add_trace(
                         go.Scatter(
                             x=result.trend.index,
                             y=result.trend,
                             mode='lines',
                             name='Тренд',
-                            line=dict(
-                                color='orange')))
+                            line={"color": 'orange'}))
                     fig_decompose_1.update_layout(
-                        title=f'Оригинальный ряд и Тренд для ' +
+                        title='Оригинальный ряд и Тренд для ' +
                         f'{selected_ticker}',
                         xaxis_title="Дата",
                         yaxis_title="Значение",
@@ -253,16 +245,14 @@ with tab1:
                             y=result.seasonal,
                             mode='lines',
                             name='Сезонность',
-                            line=dict(
-                                color='green')))
+                            line={"color": 'green'}))
                     fig_decompose_2.add_trace(
                         go.Scatter(
                             x=result.resid.index,
                             y=result.resid,
                             mode='lines',
                             name='Остатки',
-                            line=dict(
-                                color='red')))
+                            line={"color": 'red'}))
                     fig_decompose_2.update_layout(
                         title=f'Сезонность и Остатки для {selected_ticker}',
                         xaxis_title="Дата",
@@ -271,11 +261,9 @@ with tab1:
                     )
                     st.plotly_chart(fig_decompose_2)
 
-                st.header("Выбор дополнительных тикеров для " +
-                          "анализа корреляции")
+                st.header("Выбор дополнительных тикеров для анализа корреляции")
                 multi_tickers = st.text_input(
-                    "Введите тикеры через запятую " +
-                    "(например: AAPL, MSFT, TSLA):",
+                    "Введите тикеры через запятую (например: AAPL, MSFT, TSLA):",
                     "",
                     key="correlation_input")
 
@@ -310,7 +298,7 @@ with tab1:
 
                         avg_corr = corr_matrix.mean().mean()
                         st.write(
-                            f"**Средняя корреляция между всеми выбранными " +
+                            "**Средняя корреляция между всеми выбранными " +
                             f"активами:** {avg_corr:.2f}")
 
                         market_index = "^GSPC"
@@ -326,15 +314,11 @@ with tab1:
                                         [market_data, asset_data],
                                         axis=1).dropna()
                                     combined.columns = ['Market', 'Asset']
-                                    market_return = combined['Market'
-                                                             ].pct_change()
-                                    asset_return = combined['Asset'
-                                                            ].pct_change(
+                                    market_return = combined['Market'].pct_change()
+                                    asset_return = combined['Asset'].pct_change(
                                     )
                                     beta = np.cov(asset_return[1:],
-                                                  market_return[1:])[
-                                                      0, 1] / np.var(
-                                                          market_return[1:])
+                                                  market_return[1:])[0, 1] / np.var(market_return[1:])
                                     beta_results.append((ticker, beta))
 
                             st.header(
@@ -346,9 +330,7 @@ with tab1:
                                     value=f"{beta:.2f}")
 
                     else:
-                        st.warning(
-                            "Необходимо как минимум два тикера " +
-                            "для анализа корреляции.")
+                        st.warning("Необходимо как минимум два тикера для анализа корреляции.")
 
         except Exception as e:
             st.error(f"Ошибка: {e}")
@@ -370,7 +352,7 @@ with tab2:
 
     if st.session_state.selected_ticker_forecast:
         selected_ticker = st.session_state.selected_ticker_forecast
-        logger.info(f"Пользователь выбрал тикер: {selected_ticker}")
+        logger.info("Пользователь выбрал тикер: %s", selected_ticker)
         try:
             stock = yf.Ticker(selected_ticker)
             period = st.selectbox(
@@ -424,8 +406,7 @@ with tab2:
 
                 if model_type == "VAR":
                     st.write(
-                        "Будут использоваться переменные: " +
-                        "High, Low, Close, Volume")
+                        "Будут использоваться переменные: High, Low, Close, Volume")
                     if st.button("Запустить модель VAR",
                                  key="forecast_var_button"):
                         logger.info("Запуск модели VAR")
@@ -502,7 +483,7 @@ with tab2:
                     if st.button(
                             f"Запустить модель {model_type}",
                             key="forecast_model_button"):
-                        logger.info(f"Запуск модели {model_type}")
+                        logger.info("Запуск модели %s", model_type)
                         if use_auto:
                             best_aic = np.inf
                             best_order = None
@@ -564,5 +545,5 @@ with tab2:
                             st.text(best_model.summary())
 
         except Exception as e:
-            logger.error(f"Ошибка: {e}")
+            logger.error("Ошибка: %s", str(e))
             st.error(f"Ошибка: {e}")

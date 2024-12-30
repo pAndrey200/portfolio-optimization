@@ -1,14 +1,14 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from pydantic import BaseModel
 from typing import List, Optional
-from statsmodels.tsa.arima.model import ARIMA
-import yfinance as yf
-import pandas as pd
 import logging
 import os
 from logging.handlers import RotatingFileHandler
 from concurrent.futures import ThreadPoolExecutor
 from io import StringIO
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from pydantic import BaseModel
+from statsmodels.tsa.arima.model import ARIMA
+import yfinance as yf
+import pandas as pd
 
 LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -66,8 +66,8 @@ def train_arima(data: List[float], parameters: dict) -> ARIMA:
         model = ARIMA(data, order=order).fit()
         return model
     except Exception as e:
-        logging.error(f"Failed to train ARIMA model: {str(e)}")
-        raise HTTPException(status_code=500, detail="Training failed.")
+        logging.error("Failed to train ARIMA model: %s", str(e))
+        raise HTTPException(status_code=500, detail="Training failed.") from e
 
 
 def load_data_from_yahoo(ticker: str, period: str) -> List[float]:
@@ -78,9 +78,9 @@ def load_data_from_yahoo(ticker: str, period: str) -> List[float]:
             raise ValueError("No data returned from Yahoo Finance.")
         return history["Close"].tolist()
     except Exception as e:
-        logging.error(f"Failed to load data for ticker {ticker}: {str(e)}")
+        logging.error("Failed to load data for ticker %s: %s", ticker, str(e))
         raise HTTPException(status_code=400,
-                            detail="Failed to load data from Yahoo Finance.")
+                            detail="Failed to load data from Yahoo Finance.") from e
 
 
 @app.post("/fit", response_model=FitResponse)
@@ -100,11 +100,10 @@ async def fit(request: FitRequest):
             model = future.result(timeout=30)
 
         MODELS[model_id] = {"model": model, "type": request.model_type}
-        logging.info(f"{request.model_type} model " +
-                     f"{model_id} trained successfully.")
+        logging.info("%s model %s trained successfully.", request.model_type, model_id)
     except Exception as e:
-        logging.error(f"Failed to train model: {str(e)}")
-        raise HTTPException(status_code=500, detail="Training failed.")
+        logging.error("Failed to train model: %s", str(e))
+        raise HTTPException(status_code=500, detail="Training failed.") from e
 
     return FitResponse(model_id=model_id, status="trained")
 
@@ -117,8 +116,8 @@ async def fit_yahoo(request: FitYahooFinanceRequest):
             raise HTTPException(status_code=400,
                                 detail="Insufficient data for training.")
     except Exception as e:
-        logging.error(f"Data loading failed: {str(e)}")
-        raise HTTPException(status_code=400, detail="Failed to load data.")
+        logging.error("Data loading failed: %s", str(e))
+        raise HTTPException(status_code=400, detail="Failed to load data.") from e
 
     model_id = f"yahoo_model_{len(MODELS) + 1}"
     parameters = request.parameters or {}
@@ -129,11 +128,10 @@ async def fit_yahoo(request: FitYahooFinanceRequest):
             model = future.result(timeout=30)
 
         MODELS[model_id] = {"model": model, "type": "ARIMA"}
-        logging.info(f"ARIMA model {model_id} trained " +
-                     "successfully using Yahoo Finance data.")
+        logging.info("ARIMA model %s trained successfully using Yahoo Finance data.", model_id)
     except Exception as e:
-        logging.error(f"Failed to train model: {str(e)}")
-        raise HTTPException(status_code=500, detail="Training failed.")
+        logging.error("Failed to train model: %s", str(e))
+        raise HTTPException(status_code=500, detail="Training failed.") from e
 
     return FitResponse(model_id=model_id, status="trained")
 
@@ -154,12 +152,11 @@ async def predict(request: PredictRequest):
         else:
             raise HTTPException(status_code=400,
                                 detail="Unsupported model type.")
-        logging.info(f"Prediction made using model {request.model_id}.")
+        logging.info("Prediction made using model %s.", request.model_id)
         return PredictResponse(predictions=forecast)
     except Exception as e:
-        logging.error(f"Prediction failed for model " +
-                      f"{request.model_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Prediction failed.")
+        logging.error("Prediction failed for model %s: %s", request.model_id, str(e))
+        raise HTTPException(status_code=500, detail="Prediction failed.") from e
 
 
 @app.get("/models", response_model=List[ModelInfo])
@@ -180,7 +177,7 @@ async def set_model(model_id: str):
     if model_id not in MODELS:
         raise HTTPException(status_code=404, detail="Model not found.")
     ACTIVE_MODEL_ID = model_id
-    logging.info(f"Active model set to {model_id}.")
+    logging.info("Active model set to %s.", model_id)
     return {"status": "active model set", "model_id": model_id}
 
 
@@ -194,9 +191,9 @@ async def upload_dataset(file: UploadFile = File(...)):
         return {"status": "success", "data": data[:10],
                 "message": "First 10 rows of dataset loaded."}
     except Exception as e:
-        logging.error(f"Failed to upload dataset: {str(e)}")
+        logging.error("Failed to upload dataset: %s", str(e))
         raise HTTPException(status_code=400,
-                            detail="Failed to process dataset.")
+                            detail="Failed to process dataset.") from e
 
 
 @app.on_event("startup")
@@ -208,4 +205,4 @@ async def load_default_model():
     model_id = "default_model"
     MODELS[model_id] = {"model": model, "type": "ARIMA"}
     ACTIVE_MODEL_ID = model_id
-    logging.info(f"Default ARIMA model {model_id} loaded.")
+    logging.info("Default ARIMA model %s loaded.", model_id)
