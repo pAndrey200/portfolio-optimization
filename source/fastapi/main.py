@@ -4,8 +4,7 @@ import os
 from logging.handlers import RotatingFileHandler
 from concurrent.futures import ThreadPoolExecutor
 from io import StringIO
-
-from fastapi import FastAPI, HTTPException, UploadFile, File
+import itertools
 from pydantic import BaseModel
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.statespace.sarimax import SARIMAX
@@ -13,6 +12,7 @@ from statsmodels.tsa.api import VAR
 import yfinance as yf
 import pandas as pd
 import numpy as np
+from fastapi import FastAPI, HTTPException, UploadFile, File
 
 LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -60,72 +60,75 @@ MODELS = {}
 ACTIVE_MODEL_ID = None
 
 def train_arima(data: List[float], parameters: dict) -> ARIMA:
+    '''
+    Обучение модели arima
+    '''
     order = parameters.get("order", (1, 1, 0))
     model = ARIMA(data, order=order).fit()
     return model
 
 def train_sarima(data: List[float], parameters: dict) -> SARIMAX:
+    '''
+    Обучение модели sarima
+    '''
     order = parameters.get("order", (1, 1, 1))
     seasonal_order = parameters.get("seasonal_order", (1, 1, 1, 12))
     model = SARIMAX(data, order=order, seasonal_order=seasonal_order).fit()
     return model
 
 def auto_arima_search(data: List[float], seasonal: bool = False) -> SARIMAX:
+    '''
+    Подбор гиперпараметров для модели arima
+    '''
     best_aic = np.inf
     best_model = None
-    p_range = range(0, 3)
-    d_range = range(0, 2)
-    q_range = range(0, 3)
     if seasonal:
-        P_range = range(0, 2)
-        D_range = range(0, 2)
-        Q_range = range(0, 2)
         m = 12
-        for p in p_range:
-            for d in d_range:
-                for q in q_range:
-                    for P in P_range:
-                        for D in D_range:
-                            for Q in Q_range:
-                                try:
-                                    model = SARIMAX(
-                                        data,
-                                        order=(p, d, q),
-                                        seasonal_order=(P, D, Q, m)
-                                    ).fit(disp=False)
-                                    if model.aic < best_aic:
-                                        best_aic = model.aic
-                                        best_model = model
-                                except:
-                                    continue
+        for p, d, q, P, D, Q in itertools.product(range(0, 3), range(0, 2), range(0, 3),
+                                                  range(0, 2), range(0, 2), range(0, 2)):
+            try:
+                model = SARIMAX(
+                    data,
+                    order=(p, d, q),
+                    seasonal_order=(P, D, Q, m)
+                ).fit(disp=False)
+                if model.aic < best_aic:
+                    best_aic = model.aic
+                    best_model = model
+            except Exception:
+                continue
     else:
-        for p in p_range:
-            for d in d_range:
-                for q in q_range:
-                    try:
-                        model = SARIMAX(data, order=(p, d, q)).fit(disp=False)
-                        if model.aic < best_aic:
-                            best_aic = model.aic
-                            best_model = model
-                    except:
-                        continue
+        for p, d, q in itertools.product(range(0, 3), range(0, 2), range(0, 3)):
+            try:
+                model = SARIMAX(data, order=(p, d, q)).fit(disp=False)
+                if model.aic < best_aic:
+                    best_aic = model.aic
+                    best_model = model
+            except Exception:
+                continueЫ
     if not best_model:
         raise HTTPException(status_code=500, detail="Auto ARIMA/SARIMA failed.")
     return best_model
 
 def train_var(df: pd.DataFrame) -> VAR:
+    '''
+    вспомогательная функция для обучения модели
+    '''
     try:
-        logging.info(f"train_var: df.shape before any transform = {df.shape}")
+        logging.info("train_var: df.shape before any transform = %s", df.shape)
         df = df[['Close', 'Volume', 'High-Low']].copy().dropna()
-        logging.info(f"train_var: df.shape after dropna = {df.shape}")
+        logging.info("train_var: df.shape after dropna = %s", df.shape)
         var_model = VAR(df)
         var_fit = var_model.fit(maxlags=2, ic='aic')
         return var_fit
     except Exception as e:
-        logging.error(f"VAR training exception: {str(e)}")
+        logging.error("VAR training exception: %s", str(e))
         raise
 
 def load_data_from_yahoo_for_close(ticker: str, period: str) -> List[float]:
+    '''
+    Загрузка цен активов на момент закрытия 
+    '''
     stock_data = yf.Ticker(ticker)
     history = stock_data.history(period=period)
     if history.empty:
@@ -133,6 +136,9 @@ def load_data_from_yahoo_for_close(ticker: str, period: str) -> List[float]:
     return history["Close"].tolist()
 
 def load_data_from_yahoo_for_var(ticker: str, period: str) -> pd.DataFrame:
+    '''
+    Загрузка цен активов
+    '''
     stock_data = yf.Ticker(ticker)
     history = stock_data.history(period=period)
     if history.empty:
@@ -143,6 +149,9 @@ def load_data_from_yahoo_for_var(ticker: str, period: str) -> pd.DataFrame:
 
 @app.post("/fit", response_model=FitResponse)
 async def fit(request: FitRequest):
+    '''
+    обучение модели по данным с датасета
+    '''
     if not request.data:
         raise HTTPException(status_code=400, detail="Data is required for training.")
     if request.model_type != "ARIMA":
@@ -156,13 +165,16 @@ async def fit(request: FitRequest):
         summary_text = str(model.summary())
         MODELS[model_id] = {"model": model, "type": request.model_type}
     except Exception as e:
-        logging.error(f"ARIMA training exception: {str(e)}")
+        logging.error("ARIMA training exception: %s", str(e))
         raise HTTPException(status_code=500, detail="Training failed.") from e
 
     return FitResponse(model_id=model_id, status="trained", summary=summary_text)
 
 @app.post("/fit_yahoo", response_model=FitResponse)
 async def fit_yahoo(request: FitYahooFinanceRequest):
+    '''
+    Обучение модели по данным с yahoo.com
+    '''
     model_type = request.model_type.upper()
     model_id = f"yahoo_model_{len(MODELS) + 1}"
 
@@ -172,13 +184,11 @@ async def fit_yahoo(request: FitYahooFinanceRequest):
             raise HTTPException(status_code=400, detail="Insufficient data for VAR.")
         try:
             with ThreadPoolExecutor() as executor:
-                future = executor.submit(train_var, df_var)
-                var_fit = future.result(timeout=60)
-            summary_text = str(var_fit.summary())
+                var_fit = executor.submit(train_var, df_var).result(timeout=60)
             MODELS[model_id] = {"model": var_fit, "type": "VAR"}
-            return FitResponse(model_id=model_id, status="trained", summary=summary_text)
+            return FitResponse(model_id=model_id, status="trained", summary=str(var_fit.summary()))
         except Exception as e:
-            logging.error(f"Failed to train VAR model: {str(e)}")
+            logging.error("Failed to train VAR model: %s", str(e))
             raise HTTPException(status_code=500, detail="Training VAR failed.") from e
 
     else:
@@ -187,45 +197,42 @@ async def fit_yahoo(request: FitYahooFinanceRequest):
             raise HTTPException(status_code=400, detail="Insufficient data for ARIMA/SARIMA.")
 
         if request.auto:
-            seasonal = (model_type == "SARIMA")
+            seasonal = model_type == "SARIMA"
             try:
                 with ThreadPoolExecutor() as executor:
-                    future = executor.submit(auto_arima_search, data, seasonal)
-                    best_model = future.result(timeout=60)
-                summary_text = str(best_model.summary())
+                    best_model = executor.submit(auto_arima_search, data, seasonal).result(timeout=60)
                 final_type = "SARIMA" if seasonal else "ARIMA"
                 MODELS[model_id] = {"model": best_model, "type": final_type}
-                return FitResponse(model_id=model_id, status="trained", summary=summary_text)
+                return FitResponse(model_id=model_id, status="trained", summary=str(best_model.summary()))
             except Exception as e:
-                logging.error(f"Auto search exception: {str(e)}")
+                logging.error("Auto search exception: %s", str(e))
                 raise HTTPException(status_code=500, detail="Auto search failed.") from e
         else:
             parameters = request.parameters or {}
             if model_type == "SARIMA":
                 try:
                     with ThreadPoolExecutor() as executor:
-                        future = executor.submit(train_sarima, data, parameters)
-                        sarima_model = future.result(timeout=60)
-                    summary_text = str(sarima_model.summary())
+                        sarima_model = executor.submit(train_sarima, data, parameters).result(timeout=60)
                     MODELS[model_id] = {"model": sarima_model, "type": "SARIMA"}
-                    return FitResponse(model_id=model_id, status="trained", summary=summary_text)
+                    return FitResponse(model_id=model_id, status="trained", summary=str(sarima_model.summary()))
                 except Exception as e:
-                    logging.error(f"SARIMA training exception: {str(e)}")
+                    logging.error("SARIMA training exception: %s", str(e))
                     raise HTTPException(status_code=500, detail="Training SARIMA failed.") from e
             else:
                 try:
                     with ThreadPoolExecutor() as executor:
-                        future = executor.submit(train_arima, data, parameters)
-                        arima_model = future.result(timeout=60)
-                    summary_text = str(arima_model.summary())
+                        arima_model = executor.submit(train_arima, data, parameters).result(timeout=60)
                     MODELS[model_id] = {"model": arima_model, "type": "ARIMA"}
-                    return FitResponse(model_id=model_id, status="trained", summary=summary_text)
+                    return FitResponse(model_id=model_id, status="trained", summary=str(arima_model.summary()))
                 except Exception as e:
-                    logging.error(f"ARIMA training exception: {str(e)}")
+                    logging.error("ARIMA training exception: %s", str(e))
                     raise HTTPException(status_code=500, detail="Training ARIMA failed.") from e
 
 @app.post("/predict", response_model=PredictResponse)
 async def predict(request: PredictRequest):
+    '''
+    Предсказвает цену актива
+    '''
     model_info = MODELS.get(request.model_id)
     if not model_info:
         raise HTTPException(status_code=404, detail=f"Model {request.model_id} not found.")
@@ -242,11 +249,14 @@ async def predict(request: PredictRequest):
             raise HTTPException(status_code=400, detail="Unsupported model type.")
         return PredictResponse(predictions=forecast)
     except Exception as e:
-        logging.error(f"Prediction exception: {str(e)}")
+        logging.error("Prediction exception: %s", str(e))
         raise HTTPException(status_code=500, detail="Prediction failed.") from e
 
 @app.get("/models", response_model=List[ModelInfo])
 async def get_models():
+    '''
+    возвращает список моделей
+    '''
     return [
         ModelInfo(
             model_id=model_id,
@@ -258,6 +268,9 @@ async def get_models():
 
 @app.post("/set_model")
 async def set_model(model_id: str):
+    '''
+    выбор модели для обучения
+    '''
     global ACTIVE_MODEL_ID
     if model_id not in MODELS:
         raise HTTPException(status_code=404, detail="Model not found.")
@@ -266,7 +279,10 @@ async def set_model(model_id: str):
 
 @app.post("/delete_all_models")
 async def delete_all_models():
-    global MODELS, ACTIVE_MODEL_ID
+    '''
+    удаление всех моделей
+    '''
+    global ACTIVE_MODEL_ID
     MODELS.clear()
     ACTIVE_MODEL_ID = None
     logging.info("All models have been deleted.")
@@ -274,6 +290,9 @@ async def delete_all_models():
 
 @app.post("/upload_dataset")
 async def upload_dataset(file: UploadFile = File(...)):
+    '''
+    загрузка данных из файла
+    '''
     try:
         contents = await file.read()
         df = pd.read_csv(StringIO(contents.decode()))
@@ -281,5 +300,5 @@ async def upload_dataset(file: UploadFile = File(...)):
         data = df[data_column].tolist()
         return {"status": "success", "data": data[:10], "message": "First 10 rows of dataset loaded."}
     except Exception as e:
-        logging.error(f"Upload dataset exception: {str(e)}")
+        logging.error("Upload dataset exception: %s", str(e))
         raise HTTPException(status_code=400, detail="Failed to process dataset.") from e
