@@ -38,6 +38,9 @@ if "default_arima_model_id" not in st.session_state:
     st.session_state["default_arima_model_id"] = None
 
 def get_financial_news(query, api_key, max_results=3):
+    '''
+    Получение новостей
+    '''
     financial_domains = (
         "bloomberg.com,cnbc.com,reuters.com,wsj.com,"
         "marketwatch.com,ft.com,yahoo.com,forbes.com,investopedia.com"
@@ -195,13 +198,13 @@ with tab1:
                 fig_bollinger.update_layout(
                     title=f"Bollinger bands для {selected_ticker}",
                     xaxis_title="Дата",
+
                     yaxis_title="Цена закрытия",
                     template="plotly_dark",
                 )
                 st.plotly_chart(fig_bollinger)
 
                 if len(data) >= 60:
-                    from statsmodels.tsa.seasonal import seasonal_decompose
                     result = seasonal_decompose(data["Close"], model="additive", period=30)
                     st.header("Сезонность и Остатки")
 
@@ -259,7 +262,7 @@ with tab1:
                     )
                     st.plotly_chart(fig_decompose_2)
 
-        except Exception as e:
+        except ValueError as e:
             st.error(f"Ошибка: {e}")
 
 with tab2:
@@ -300,7 +303,7 @@ with tab2:
                     st.session_state.default_arima_ticker = selected_ticker
                 else:
                     st.error(f"Ошибка при обучении дефолтной ARIMA(1,1,1): {res.text}")
-            except Exception as exx:
+            except ValueError as exx:
                 st.error(f"Ошибка при обучении дефолтной ARIMA(1,1,1): {str(exx)}")
 
         stock = yf.Ticker(selected_ticker)
@@ -422,7 +425,7 @@ with tab2:
                     st.write(f"**model_id:** {new_model_id}")
                     st.text(new_summary)
 
-                except Exception as ex_:
+                except ValueError as ex_:
                     st.error(f"Ошибка при обращении к API: {str(ex_)}")
 
             st.write("---")
@@ -469,10 +472,11 @@ with tab2:
                             for m_info in models_list:
                                 mid = m_info["model_id"]
                                 summ_text = st.session_state["saved_summaries"].get(mid, "Нет сохранённого описания.")
-                                st.write(f"**Model ID:** {mid} | Type: {m_info['model_type']} | Status: {m_info['status']}")
+                                st.write(
+                                    f"**Model ID:** {mid} | Type: {m_info['model_type']} | Status: {m_info['status']}")
                                 st.text(summ_text)
                                 st.write("---")
-                except Exception as ex_:
+                except ValueError as ex_:
                     st.error(f"Ошибка при получении списка моделей: {str(ex_)}")
 
 
@@ -487,5 +491,5 @@ with tab2:
                         st.session_state.default_arima_model_id = None
                     else:
                         st.error(f"Ошибка при удалении моделей: {del_resp.text}")
-                except Exception as ex_:
+                except ValueError as ex_:
                     st.error(f"Ошибка при обращении к API: {str(ex_)}")
