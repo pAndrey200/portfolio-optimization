@@ -37,6 +37,7 @@ if "default_arima_ticker" not in st.session_state:
 if "default_arima_model_id" not in st.session_state:
     st.session_state["default_arima_model_id"] = None
 
+
 def get_financial_news(query, api_key, max_results=3):
     '''
     Получение новостей
@@ -54,6 +55,7 @@ def get_financial_news(query, api_key, max_results=3):
         articles = response.json().get("articles", [])[:max_results]
         return articles
     return []
+
 
 st.title("AI24: Project, team 31")
 
@@ -103,9 +105,9 @@ with tab1:
                 st.write("**Текущая цена:** Неизвестно")
 
             st.header("График цены")
-            period = st.selectbox("Выберите период:", ["1mo","3mo","6mo","1y","5y","max"],
+            period = st.selectbox("Выберите период:", ["1mo", "3mo", "6mo", "1y", "5y", "max"],
                                   index=2, key="analysis_period")
-            interval = st.selectbox("Выберите интервал:", ["1d","1wk","1mo"],
+            interval = st.selectbox("Выберите интервал:", ["1d", "1wk", "1mo"],
                                     index=0, key="analysis_interval")
             data = stock.history(period=period, interval=interval)
 
@@ -386,7 +388,6 @@ with tab2:
                                 "order": (p, d, q)
                             }
 
-
                     fit_response = requests.post(f"{API_URL}/fit_yahoo", json=fit_payload, timeout=120)
                     if fit_response.status_code != 200:
                         st.error(f"Ошибка при обучении модели: {fit_response.text}")
@@ -478,7 +479,6 @@ with tab2:
                                 st.write("---")
                 except ValueError as ex_:
                     st.error(f"Ошибка при получении списка моделей: {str(ex_)}")
-
 
             if st.button("Удалить все модели"):
                 try:

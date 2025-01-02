@@ -27,10 +27,12 @@ logging.basicConfig(
 
 app = FastAPI()
 
+
 class FitRequest(BaseModel):
     data: List[float]
     model_type: str
     parameters: Optional[dict] = None
+
 
 class FitYahooFinanceRequest(BaseModel):
     ticker: str
@@ -39,25 +41,31 @@ class FitYahooFinanceRequest(BaseModel):
     parameters: Optional[dict] = None
     auto: Optional[bool] = False
 
+
 class FitResponse(BaseModel):
     model_id: str
     status: str
     summary: str
 
+
 class PredictRequest(BaseModel):
     model_id: str
     steps: int
 
+
 class PredictResponse(BaseModel):
     predictions: List[float]
+
 
 class ModelInfo(BaseModel):
     model_id: str
     model_type: str
     status: str
 
+
 MODELS = {}
 ACTIVE_MODEL_ID = None
+
 
 def train_arima(data: List[float], parameters: dict) -> ARIMA:
     '''
@@ -67,6 +75,7 @@ def train_arima(data: List[float], parameters: dict) -> ARIMA:
     model = ARIMA(data, order=order).fit()
     return model
 
+
 def train_sarima(data: List[float], parameters: dict) -> SARIMAX:
     '''
     Обучение модели sarima
@@ -75,6 +84,7 @@ def train_sarima(data: List[float], parameters: dict) -> SARIMAX:
     seasonal_order = parameters.get("seasonal_order", (1, 1, 1, 12))
     model = SARIMAX(data, order=order, seasonal_order=seasonal_order).fit()
     return model
+
 
 def auto_arima_search(data: List[float], seasonal: bool = False) -> SARIMAX:
     '''
@@ -110,6 +120,7 @@ def auto_arima_search(data: List[float], seasonal: bool = False) -> SARIMAX:
         raise HTTPException(status_code=500, detail="Auto ARIMA/SARIMA failed.")
     return best_model
 
+
 def train_var(df: pd.DataFrame) -> VAR:
     '''
     вспомогательная функция для обучения модели
@@ -125,15 +136,17 @@ def train_var(df: pd.DataFrame) -> VAR:
         logging.error("VAR training exception: %s", str(e))
         raise
 
+
 def load_data_from_yahoo_for_close(ticker: str, period: str) -> List[float]:
     '''
-    Загрузка цен активов на момент закрытия 
+    Загрузка цен активов на момент закрытия
     '''
     stock_data = yf.Ticker(ticker)
     history = stock_data.history(period=period)
     if history.empty:
         raise ValueError("No data returned from Yahoo Finance.")
     return history["Close"].tolist()
+
 
 def load_data_from_yahoo_for_var(ticker: str, period: str) -> pd.DataFrame:
     '''
@@ -146,6 +159,7 @@ def load_data_from_yahoo_for_var(ticker: str, period: str) -> pd.DataFrame:
     df = history[["Close", "Volume", "High", "Low"]].copy()
     df["High-Low"] = df["High"] - df["Low"]
     return df
+
 
 @app.post("/fit", response_model=FitResponse)
 async def fit(request: FitRequest):
@@ -169,6 +183,7 @@ async def fit(request: FitRequest):
         raise HTTPException(status_code=500, detail="Training failed.") from e
 
     return FitResponse(model_id=model_id, status="trained", summary=summary_text)
+
 
 @app.post("/fit_yahoo", response_model=FitResponse)
 async def fit_yahoo(request: FitYahooFinanceRequest):
@@ -228,6 +243,7 @@ async def fit_yahoo(request: FitYahooFinanceRequest):
                     logging.error("ARIMA training exception: %s", str(e))
                     raise HTTPException(status_code=500, detail="Training ARIMA failed.") from e
 
+
 @app.post("/predict", response_model=PredictResponse)
 async def predict(request: PredictRequest):
     '''
@@ -252,6 +268,7 @@ async def predict(request: PredictRequest):
         logging.error("Prediction exception: %s", str(e))
         raise HTTPException(status_code=500, detail="Prediction failed.") from e
 
+
 @app.get("/models", response_model=List[ModelInfo])
 async def get_models():
     '''
@@ -266,6 +283,7 @@ async def get_models():
         for model_id, model_info in MODELS.items()
     ]
 
+
 @app.post("/set_model")
 async def set_model(model_id: str):
     '''
@@ -277,6 +295,7 @@ async def set_model(model_id: str):
     ACTIVE_MODEL_ID = model_id
     return {"status": "active model set", "model_id": model_id}
 
+
 @app.post("/delete_all_models")
 async def delete_all_models():
     '''
@@ -287,6 +306,7 @@ async def delete_all_models():
     ACTIVE_MODEL_ID = None
     logging.info("All models have been deleted.")
     return {"status": "all models removed"}
+
 
 @app.post("/upload_dataset")
 async def upload_dataset(file: UploadFile = File(...)):
