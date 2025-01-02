@@ -38,7 +38,7 @@ FastAPI позволяет:
 
 ```json
 {
-  "data": [float, ...],
+  "data": [1.2, 3.4, 5.6],
   "model_type": "ARIMA",
   "parameters": {"order": [1, 1, 1]}
 }
