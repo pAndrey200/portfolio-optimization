@@ -95,7 +95,7 @@ def auto_arima_search(data: List[float], seasonal: bool = False) -> SARIMAX:
                 if model.aic < best_aic:
                     best_aic = model.aic
                     best_model = model
-            except Exception:
+            except ValueError:
                 continue
     else:
         for p, d, q in itertools.product(range(0, 3), range(0, 2), range(0, 3)):
@@ -104,8 +104,8 @@ def auto_arima_search(data: List[float], seasonal: bool = False) -> SARIMAX:
                 if model.aic < best_aic:
                     best_aic = model.aic
                     best_model = model
-            except Exception:
-                continueЫ
+            except ValueError:
+                continue
     if not best_model:
         raise HTTPException(status_code=500, detail="Auto ARIMA/SARIMA failed.")
     return best_model
