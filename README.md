@@ -40,7 +40,7 @@ FastAPI позволяет:
 {
   "data": [float, ...],
   "model_type": "ARIMA",
-  "parameters": {"order": [p, d, q]}
+  "parameters": {"order": [1, 1, 1]}
 }
 ```
 
@@ -51,7 +51,7 @@ FastAPI позволяет:
   "ticker": "AAPL",
   "period": "1y",
   "model_type": "ARIMA",
-  "parameters": {"order": [p, d, q]},
+  "parameters": {"order": [1, 1, 0]},
   "auto": false
 }
 ```
