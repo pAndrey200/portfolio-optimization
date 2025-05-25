@@ -1,157 +1,113 @@
+import os
 import requests as rq
 from bs4 import BeautifulSoup as bs
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-from IPython import display
+from datetime import datetime
+from tqdm.auto import tqdm
 
-class rbc_parser:
-    def __init__(self):
-        pass
-    
-    
-    def _get_url(self, param_dict: dict) -> str:
-        """
-        Возвращает URL для запроса json таблицы со статьями
-        """
-        url = 'https://www.rbc.ru/search/ajax/?' +\
-        'project={0}&'.format(param_dict['project']) +\
-        'dateFrom={0}&'.format(param_dict['dateFrom']) +\
-        'dateTo={0}&'.format(param_dict['dateTo']) +\
-        'query={0}&'.format(param_dict['query']) +\
-        'material={0}'.format(param_dict['material'])
-        #        'category={0}&'.format(param_dict['category']) +\
-        #        'page={0}&'.format(param_dict['page']) +\
-        # 'offset={0}&'.format(param_dict['offset']) +\
-        # 'limit={0}&'.format(param_dict['limit']) +\
+class RBCParser:
+    BASE_SEARCH_URL = 'https://www.rbc.ru/search/ajax/'
+
+    def __init__(self, project: str = 'quote', cache_dir: str = 'parsers/data'):
+        self.project = project
+        self.cache_dir = cache_dir
+        os.makedirs(self.cache_dir, exist_ok=True)
+
+    def _cache_path(self, query: str, date_from: str, date_to: str) -> str:
+        # Формирует путь к файлу кеша
+        filename = f"{query.upper()}_{date_from.replace('.', '-')}_{date_to.replace('.', '-')}.csv"
+        return os.path.join(self.cache_dir, filename)
+
+    def _load_cache(self, query: str, date_from: str, date_to: str) -> pd.DataFrame | None:
+        path = self._cache_path(query, date_from, date_to)
+        if os.path.exists(path):
+            print(f"[RBC][Cache] Using {path}")
+            return pd.read_csv(path, parse_dates=['published'])
+        return None
+
+    def _save_cache(self, df: pd.DataFrame, query: str, date_from: str, date_to: str):
+        path = self._cache_path(query, date_from, date_to)
+        df.to_csv(path, index=False)
+        print(f"[RBC][Cache] Saved → {path}")
+
+    def _build_search_url(self, params: dict) -> str:
+        return (
+            f"{self.BASE_SEARCH_URL}?project={params['project']}"
+            f"&dateFrom={params['dateFrom']}&dateTo={params['dateTo']}"
+            f"&query={params['query']}&page={params['page']}"
+        )
+
+    def _fetch_search_page(self, params: dict) -> pd.DataFrame:
+        url = self._build_search_url(params)
         print(url)
-        return url
-    
-    def _get_search_table(self, param_dict: dict,
-                        include_text: bool = True) -> pd.DataFrame:
-        """
-        Возвращает pd.DataFrame со списком статей
-        
-        include_text: bool
-        ### Если True, статьи возвращаются с текстами
-        """
-        url = self._get_url(param_dict)
-        r = rq.get(url)
-        search_table = pd.DataFrame(r.json()['items'])
-        if include_text and not search_table.empty:
-            get_text = lambda x: self._get_article_data(x['fronturl'])
-            search_table[['overview', 'text']] = search_table.apply(get_text,
-                                                                    axis=1).tolist()
-        
-        if 'publish_date_t' in search_table.columns:
-            search_table.sort_values('publish_date_t', ignore_index=True)
-            
-        return search_table
-    
-    def _iterable_load_by_page(self, param_dict):
-        param_copy = param_dict.copy()
-        results = []
-        
-        result = self._get_search_table(param_copy)
-        results.append(result)
-        
-        while not result.empty:
-            param_copy['page'] = str(int(param_copy['page']) + 1)
-            result = self._get_search_table(param_copy)
-            results.append(result)
-            
-        results = pd.concat(results, axis=0, ignore_index=True)
-        
-        return results
-    
-    def _get_article_data(self, url: str):
-        """
-        Возвращает описание и текст статьи по ссылке
-        """
-        r = rq.get(url)
-        soup = bs(r.text, features="lxml") # features="lxml" чтобы не было warning
-        div_overview = soup.find('div', {'class': 'article__text__overview'})
-        if div_overview:
-            overview = div_overview.text.replace('<br />','\n').strip()
-        else:
-            overview = None
-        p_text = soup.find_all('p')
-        if p_text:
-            text = ' '.join(map(lambda x:
-                                x.text.replace('<br />','\n').strip(),
-                                p_text))
-        else:
-            text = None
-        
-        return overview, text 
-    
-    def get_articles(self,
-                     param_dict,
-                     time_step = 1,
-                     save_every = 5,
-                     save_excel = True) -> pd.DataFrame:
-        """
-        Функция для скачивания статей интервалами через каждые time_step дней
-        Делает сохранение таблицы через каждые save_every * time_step дней
+        resp = rq.get(url)
+        resp.raise_for_status()
+        items = resp.json().get('items', [])
+        return pd.DataFrame(items)
 
-        param_dict: dict
-        ### Параметры запроса 
-        ###### project - раздел поиска, например, rbcnews
-        ###### category - категория поиска, например, TopRbcRu_economics
-        ###### dateFrom - с даты
-        ###### dateTo - по дату
-        ###### query - поисковой запрос (ключевое слово), например, РБК
-        ###### page - смещение поисковой выдачи (с шагом 20)
-        
-        ###### Deprecated:
-        ###### offset - смещение поисковой выдачи
-        ###### limit - лимит статей, максимум 100
-        """
-        
-        param_copy = param_dict.copy()
-        time_step = timedelta(days=time_step)
-        dateFrom = datetime.strptime(param_copy['dateFrom'], '%d.%m.%Y')
-        dateTo = datetime.strptime(param_copy['dateTo'], '%d.%m.%Y')
-        if dateFrom > dateTo:
-            raise ValueError('dateFrom should be less than dateTo')
-        
-        out = pd.DataFrame()
-        save_counter = 0
+    def _iter_search(self, params: dict) -> pd.DataFrame:
+        all_pages = []
+        page = 1
+        while True:
+            params['page'] = str(page)
+            df_page = self._fetch_search_page(params)
+            if df_page.empty:
+                break
+            all_pages.append(df_page)
+            page += 1
+        if all_pages:
+            return pd.concat(all_pages, ignore_index=True)
+        return pd.DataFrame()
 
-        while dateFrom <= dateTo:
-            param_copy['dateTo'] = (dateFrom + time_step).strftime("%d.%m.%Y")
-            if dateFrom + time_step > dateTo:
-                param_copy['dateTo'] = dateTo.strftime("%d.%m.%Y")
-            print('Parsing articles from ' + param_copy['dateFrom'] +  ' to ' + param_copy['dateTo'])
-            out = pd.concat([out, self._iterable_load_by_page(param_copy)], axis=0, ignore_index=True)
-            dateFrom += time_step + timedelta(days=1)
-            param_copy['dateFrom'] = dateFrom.strftime("%d.%m.%Y")
-            save_counter += 1
-            if save_counter == save_every:
-                display.clear_output(wait=True)
-                out.to_excel("/tmp/checkpoint_table.xlsx")
-                print('Checkpoint saved!')
-                save_counter = 0
-                
-        if save_excel:
-            out.to_excel("rbc_{}_{}.xlsx".format(
-                param_dict['dateFrom'],
-                param_dict['dateTo']))
-        print('Finish')
-        
-        return out
+    def _get_article_text(self, url: str):
+        resp = rq.get(url)
+        resp.raise_for_status()
+        soup = bs(resp.text, 'lxml')
+        title_tag = soup.find('h1')
+        title = title_tag.get_text(strip=True) if title_tag else ''
+        paragraphs = soup.find_all('p')
+        texts = []
+        for p in paragraphs:
+            txt = p.get_text(strip=True)
+            if 'При полном или частичном использовании' in txt:
+                break
+            texts.append(txt)
+        text = '\n'.join(texts)
+        return title, text
 
-dateFrom = '2024-12-01'
-dateTo = "2024-12-23"
+    def get_articles(self, query: str, ticker: str, date_from: str, date_to: str) -> pd.DataFrame:
 
-param_dict = {'query'   : 'SBER',
-                  'project' : 'quote',
-                  'dateFrom': datetime.strptime(dateFrom, '%Y-%m-%d').strftime('%d.%m.%Y'),
-                  'dateTo'  : datetime.strptime(dateTo, '%Y-%m-%d').strftime('%d.%m.%Y'),
-                  'material' : ''}
+        cached = self._load_cache(query, date_from, date_to)
+        if cached is not None:
+            print(f"Ticker '{query.upper()}': найдено {len(cached)} статей (cache)")
+            return cached
 
-parser = rbc_parser()
-tbl = parser._get_search_table(param_dict,
-                               include_text = True) # Парсить текст статей
-print(len(tbl))
-tbl.head()
+        params = {
+            'project': self.project,
+            'dateFrom': date_from,
+            'dateTo': date_to,
+            'query': query
+        }
+        df_search = self._iter_search(params)
+        records = []
+        for item in tqdm(df_search.to_dict('records'), desc=f"Parsing {query.upper()}", leave=False):
+            url = item.get('fronturl')
+            if not url:
+                continue
+            try:
+                title, text = self._get_article_text(url)
+                records.append({
+                    'ticker': ticker,
+                    'published': pd.to_datetime(item.get('publish_date'), utc=True).tz_convert('Europe/Moscow').tz_localize(None),
+                    'title': title,
+                    'text': text,
+                    'url': url
+                })
+            except Exception:
+                continue
+
+        df = pd.DataFrame(records)
+        # Сохраняем в кеш и выводим количество
+        self._save_cache(df, query, date_from, date_to)
+        print(f"Ticker '{query.upper()}': найдено {len(df)} статей")
+        return df

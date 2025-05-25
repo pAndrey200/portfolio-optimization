@@ -1,0 +1,7 @@
+transformers==4.40.0
+torch>=2.2
+pandas
+requests
+beautifulsoup4
+scikit-learn
+tqdm
