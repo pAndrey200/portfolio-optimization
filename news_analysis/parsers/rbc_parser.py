@@ -14,7 +14,6 @@ class RBCParser:
         os.makedirs(self.cache_dir, exist_ok=True)
 
     def _cache_path(self, query: str, date_from: str, date_to: str) -> str:
-        # Формирует путь к файлу кеша
         filename = f"{query.upper()}_{date_from.replace('.', '-')}_{date_to.replace('.', '-')}.csv"
         return os.path.join(self.cache_dir, filename)
 
@@ -55,6 +54,12 @@ class RBCParser:
                 break
             all_pages.append(df_page)
             page += 1
+            if page == 90:
+                page = 1
+                last_date_str = df_page.tail(1)['publish_date'].values[0]
+                last_date = pd.to_datetime(last_date_str, utc=True)
+                new_date_to = last_date.strftime('%d.%m.%Y')
+                params['dateTo'] = new_date_to
         if all_pages:
             return pd.concat(all_pages, ignore_index=True)
         return pd.DataFrame()

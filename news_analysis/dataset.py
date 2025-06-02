@@ -26,35 +26,36 @@ class FusionDataset(Dataset):
         self.samples = []
         news['title'].fillna('', inplace=True)
         news['text'].fillna('', inplace=True)
+        skipped = 0
         for _, r in news.iterrows():
             t = r.ticker
             date = r.published.normalize()
             if t not in prices or date not in prices[t].index:
+                skipped += 1
                 continue
 
             idx = prices[t].index.get_loc(date)
-            if idx < window:
+            if idx + window >= len(prices[t]):
                 continue
 
-            hist = prices[t].iloc[idx-window:idx]
-            ret = prices[t].iloc[idx].close / prices[t].iloc[idx-1].close - 1
+            current_price = prices[t].iloc[idx].close
+            future_price = prices[t].iloc[idx + window].close
+            ret = future_price / current_price - 1
             label = int(ret > 0)
-
             full_text = remove_lines(f"{r.title} {r.text}")
 
             enc = self.tok(full_text,
-                           truncation=True,
-                           padding='max_length',
-                           max_length=128,
-                           return_tensors='pt')
+                        truncation=True,
+                        padding='max_length',
+                        max_length=128,
+                        return_tensors='pt')
             input_ids = enc.input_ids.squeeze(0)
 
             self.samples.append((
                 input_ids,
-                torch.tensor(hist.close.values, dtype=torch.float),
                 torch.tensor(label, dtype=torch.long),
             ))
-            
+        print(f"skipped {skipped}")
     def __len__(self):
         return len(self.samples)
 

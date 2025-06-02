@@ -1,58 +1,107 @@
 import asyncio
+import os
+from datetime import datetime
 from playwright.async_api import async_playwright
 import pandas as pd
 
-base_url = 'https://www.finam.ru'
-ticket = 'CHMF'
-amount = 1000
+class FinamParser:
+    """
+    Асинхронный парсер новостей с сайта Finam.ru.
+    Возвращает DataFrame с колонками: ticker, published, title, text
+    """
+    BASE_URL = 'https://www.finam.ru'
 
-async def async_work():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=False
-        )
-        page = await browser.new_page()
-        await page.goto(base_url + '/quote/moex/' + ticket + '/publications/')
-        i = 0
-        while i <= amount:
-            await page.locator("[data-id='button-more']").click()
-            await page.wait_for_timeout(5000)
-            i += 50
-        await page.wait_for_timeout(10000)
-        div = await page.locator('div.mb2x').locator("a.cl-blue").all()
-        s = []
-        for d in div:
-            s.append(await d.get_attribute("href"))
-        urls = s[::2]
-        print(len(urls))
-        news_data = []  # Список для хранения новостей
-        i = 0
-        for url in urls:
-            try:
-                new_page = await browser.new_page()
-                await new_page.goto(base_url + url)
-                paragraphs = await new_page.locator('p').filter(
-                    has_not_text="Дизайн — «Липка и Друзья»"
-                ).all()
-                news_text = ""
-                for paragraph in paragraphs:
-                    s = await paragraph.inner_text()
-                    if s == ('При полном или частичном использовании материалов ссылка на Finam.ru обязательна. Подробнее об использовании информации и котировок. Редакция не несет ответственности за достоверность информации, опубликованной в рекламных объявлениях.  18+'):
-                        break
-                    news_text += s + "\n"
-                pub_date = await new_page.locator("[data-id='date']").inner_text()
+    def __init__(self, ticket: str, max_articles: int = 1000, cache_dir: str = 'parsers/data'):
+        self.ticket = ticket.upper()
+        self.max_articles = max_articles
+        self.cache_dir = cache_dir
+        os.makedirs(self.cache_dir, exist_ok=True)
+        # кеш-файл для данного тикера
+        self.cache_file = os.path.join(self.cache_dir, f"{self.ticket}_finam.csv")
 
-                news_data.append({"url": base_url + url, "content": news_text, "date" : pub_date})
-                await new_page.close()
-            except:
-                print(url, 'error')
-                await new_page.close()
-            i+=1
-            print(i)
+    def _load_cache(self):
+        if os.path.exists(self.cache_file):
+            print(f"[Finam][Cache] Using {self.cache_file}")
+            return pd.read_csv(self.cache_file, parse_dates=['published'])
+        return None
 
-        news_df = pd.DataFrame(news_data)
-        news_df.to_csv(f"./data/{ticket}_news.csv", index=False, encoding='utf-8')
+    def _save_cache(self, df: pd.DataFrame):
+        df.to_csv(self.cache_file, index=False)
+        print(f"[Finam][Cache] Saved → {self.cache_file}")
 
-        #await browser.close()
+    async def _fetch(self):
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            # Открываем страницу публикаций
+            await page.goto(f"{self.BASE_URL}/quote/moex/{self.ticket}/publications/")
+            print(self.ticket)
+            # Кнопка загрузки дополнительных
+            loaded = 0
+            while loaded < self.max_articles:
+                more = page.locator("[data-id='button-more']")
+                if not await more.is_visible():
+                    break
+                await more.click()
+                await page.wait_for_timeout(2000)
+                loaded += 50
 
-asyncio.run(async_work())
+            # Собираем ссылки на новости
+            links = await page.locator('div.mb2x a.cl-blue').all()
+            urls = []
+            for i,el in enumerate(links):
+                href = await el.get_attribute('href')
+                # берем каждую вторую ссылку (из двух рядом)
+                if href and i % 2 == 0:
+                    urls.append(self.BASE_URL + href)
+
+            news = []
+            for url in urls:
+                print(url)
+                try:
+                    npg = await browser.new_page()
+                    await npg.goto(url)
+                    # заголовок
+                    title = await npg.locator('h1').inner_text()
+                    # дата публикации
+                    date_raw = await npg.locator("[data-id='date']").inner_text()
+                    published = datetime.strptime(date_raw, "%d.%m.%Y %H:%M")
+                    # текст новости — все <p> до рекламного блока
+                    paras = await npg.locator('p').all()
+                    text = []
+                    for p in paras:
+                        txt = await p.inner_text()
+                        if 'При полном или частичном использовании' in txt:
+                            break
+                        text.append(txt)
+                    full_text = '\n'.join(text).strip()
+                    news.append({
+                        'ticker': self.ticket,
+                        'published': published,
+                        'title': title,
+                        'text': full_text,
+                        'url': url
+                    })
+                    await npg.close()
+                except Exception as e:
+                    print(f"[Finam][Error] {url}: {e}")
+
+            await browser.close()
+            return pd.DataFrame(news)
+
+    def download(self) -> pd.DataFrame:
+        # проверим кеш
+        cached = self._load_cache()
+        if cached is not None:
+            return cached
+
+        # иначе запускаем асинхронный парсинг
+        df = asyncio.run(self._fetch())
+        if not df.empty:
+            self._save_cache(df)
+        return df
+
+# Пример использования:
+# parser = FinamParser('CHMF', max_articles=500)
+# finam_news = parser.download()
+# print(finam_news.head())
