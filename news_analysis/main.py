@@ -26,17 +26,17 @@ DEFAULT_MAP = {
 
 def save_dataset(news: pd.DataFrame, dataset: FusionDataset, path='fusion_dataset.csv'):
     records = []
-    for i, (_, prices, label) in enumerate(dataset):
+    for i, (_, label) in enumerate(dataset):
         r = news.iloc[i]
         records.append({
             'ticker': r.ticker,
             'published': r.published,
             'title': r.title,
             'text': r.text,
-            'price_window': ','.join(map(str, prices.numpy())),
             'label': label.item(),
         })
     pd.DataFrame(records).to_csv(path, index=False)
+
 
 
 
