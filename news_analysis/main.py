@@ -102,49 +102,59 @@ def run_epoch(model, loader, optim, device, train=True):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--start',required=True); ap.add_argument('--end',required=True)
-    ap.add_argument('--queries',default=''); ap.add_argument('--window',type=int,default=5)
-    ap.add_argument('--epochs',type=int,default=30)
+    ap.add_argument("--start", required=True)
+    ap.add_argument("--end",   required=True)
+    ap.add_argument("--queries", default="")
+    ap.add_argument("--horizon", type=int, default=5,
+                    help="горизонт в торговых днях для label")
+    ap.add_argument("--pad", type=int, default=365,
+                    help="сколько дней истории добрать ДО start")
+    ap.add_argument("--label-type", choices=["point", "mean"],
+                    default="point")
+    ap.add_argument("--epochs", type=int, default=30)
     args = ap.parse_args()
 
     qmap = parse_query_map(args.queries)
 
+    # ---------- парсим новости ----------
     news_lenta = LentaRuParser(args.start, args.end).download(qmap)
+
     parser_rbc = RBCParser()
-    rbc_dfs = []
+    rbc_frames = []
     for q, tkr in qmap.items():
-        df_rbc = parser_rbc.get_articles(
+        df = parser_rbc.get_articles(
             q, tkr,
-            datetime.strptime(args.start, '%Y-%m-%d').strftime('%d.%m.%Y'),
-            datetime.strptime(args.end,   '%Y-%m-%d').strftime('%d.%m.%Y'),
+            datetime.strptime(args.start, "%Y-%m-%d").strftime("%d.%m.%Y"),
+            datetime.strptime(args.end,   "%Y-%m-%d").strftime("%d.%m.%Y"),
         )
-        if not df_rbc.empty:
-            rbc_dfs.append(df_rbc)
+        if not df.empty:
+            rbc_frames.append(df)
 
-    news_rbc = pd.concat(rbc_dfs, ignore_index=True) if rbc_dfs else pd.DataFrame()
-    
-    news = pd.concat([news_lenta, news_rbc], ignore_index=True)
-    news.sort_values('published', inplace=True)
+    news = (pd.concat([news_lenta, *rbc_frames], ignore_index=True)
+              .sort_values("published"))
 
-    pad_start = (datetime.strptime(args.start,'%Y-%m-%d') - timedelta(days=30)).strftime('%Y-%m-%d')
-    print("начало ", pad_start, " end ", args.end)
-    prices={t:fetch_candles(t,pad_start,args.end) for t in set(qmap.values())}
-    ds = FusionDataset(news,prices,args.window)
-    print(len(news_rbc), len(news_lenta), len(news), len(ds))
-    save_dataset(news, ds, 'fusion_dataset.csv')
-    train,val = random_split(ds, [int(.8*len(ds)), len(ds)-int(.8*len(ds))])
-    ld_tr = DataLoader(train,batch_size=8,shuffle=True)
-    ld_val= DataLoader(val,batch_size=8)
+    # ---------- качаем цены ----------
+    pad_start = (pd.to_datetime(args.start) - timedelta(days=args.pad)).strftime("%Y-%m-%d")
+    prices = {t: fetch_candles(t, pad_start, args.end) for t in set(qmap.values())}
 
-    dev = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(dev)
-    model = FusionModel().to(dev)
-    optim = torch.optim.AdamW(model.parameters(),lr=3e-5, weight_decay=1e-2)
+    # ---------- готовим датасет ----------
+    ds = FusionDataset(news, prices,
+                       horizon=args.horizon,
+                       label_type=args.label_type)
+    save_dataset(news, ds, "fusion_dataset.csv")
+    # train,val = random_split(ds, [int(.8*len(ds)), len(ds)-int(.8*len(ds))])
+    # ld_tr = DataLoader(train,batch_size=8,shuffle=True)
+    # ld_val= DataLoader(val,batch_size=8)
 
-    for e in range(1,args.epochs+1):
-        train_stats = run_epoch(model, ld_tr, optim, dev, True)
-        val_stats   = run_epoch(model, ld_val, optim, dev, False)
-    torch.save(model.state_dict(),'fusion_model.pt')
+    # dev = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # print(dev)
+    # model = FusionModel().to(dev)
+    # optim = torch.optim.AdamW(model.parameters(),lr=3e-5, weight_decay=1e-2)
+
+    # for e in range(1,args.epochs+1):
+    #     train_stats = run_epoch(model, ld_tr, optim, dev, True)
+    #     val_stats   = run_epoch(model, ld_val, optim, dev, False)
+    # torch.save(model.state_dict(),'fusion_model.pt')
 
 if __name__=='__main__':
     main()
